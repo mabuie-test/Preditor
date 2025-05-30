@@ -10,7 +10,7 @@ export default function UploadForm() {
   const [valores, setValores] = useState([]);
   const [historico, setHistorico] = useState([]);
   const [predicao, setPredicao] = useState(null);
-  const [manualInput, setManualInput] = useState('');
+  const [manualInput, setManualInput] = useState(''); // pode conter "2.45" ou "2.45,1.20,3.00"
 
   const onDrop = acceptedFiles => setArquivo(acceptedFiles[0]);
   const { getRootProps, getInputProps } = useDropzone({ onDrop, accept: 'image/*' });
@@ -58,10 +58,19 @@ export default function UploadForm() {
   };
 
   const handleManual = async () => {
-    if (!manualInput) return alert('Digite um valor para inserir manualmente.');
+    if (!manualInput.trim()) return alert('Digite um ou mais valores (ex: "2.45,1.20").');
+    // separa por vírgula, limpa espaços
+    const arr = manualInput
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
     try {
-      const res = await axios.post('/api/partidas/manual', { valor: manualInput });
-      alert('Valor manual inserido: ' + res.data.valorInserido);
+      const payload = arr.length > 1
+        ? { valores: arr }
+        : { valor: arr[0] };
+      const res = await axios.post('/api/partidas/manual', payload);
+      alert('Valores inseridos: ' + (res.data.valoresInseridos || [res.data.valorInserido]).join(', '));
       setManualInput('');
       await fetchHistorico();
     } catch (err) {
@@ -106,12 +115,12 @@ export default function UploadForm() {
         <div className="mb-4">
           <p>Valor Previsto: <strong>{predicao}x</strong></p>
           <div className="mt-2">
-            <label className="mr-2">Ou insira manualmente:</label>
+            <label className="mr-2">Ou insira manualmente (vírgula separa):</label>
             <input
               type="text"
               value={manualInput}
               onChange={e => setManualInput(e.target.value)}
-              placeholder="ex: 2.45"
+              placeholder="ex: 2.45, 1.20, 3.00"
               className="border px-2 py-1 mr-2"
             />
             <button
@@ -136,7 +145,7 @@ export default function UploadForm() {
       {role === 'admin' && (
         <div className="mt-6 p-4 border-t">
           <h3 className="text-lg">Painel de Admin</h3>
-          {/* Aqui poderá adicionar controles de gestão de utilizadores, estatísticas avançadas, etc. */}
+          {/* Controles adicionais */}
         </div>
       )}
     </div>
