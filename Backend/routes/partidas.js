@@ -1,9 +1,9 @@
-const express = require('express');
-const multer  = require('multer');
+const express   = require('express');
+const multer    = require('multer');
 const Tesseract = require('tesseract.js');
-const fs      = require('fs');
-const stats   = require('simple-statistics');
-const Partida = require('../models/Partida');
+const fs        = require('fs');
+const stats     = require('simple-statistics');
+const Partida   = require('../models/Partida');
 const { allowRoles } = require('../middleware/role');
 
 const router = express.Router();
@@ -20,21 +20,35 @@ router.post(
       const { data: { text } } = await Tesseract.recognize(
         imagePath, 'eng', { logger: m => console.log(m) }
       );
+
       // Extrair todos os valores tipo "2.45x"
       const matches = Array.from(text.matchAll(/(\d+\.\d+)x/g));
       const valores = matches.map(m => m[1] + 'x');
+
       if (valores.length === 0) {
-        return res.status(422)
-          .json({ sucesso: false, mensagem: 'Nenhum multiplicador encontrado.' });
+        return res.status(422).json({
+          sucesso: false,
+          mensagem: 'Nenhum multiplicador encontrado na imagem.'
+        });
       }
+
       // Inserção em batch
       const docs = valores.map(v => ({ valor: v }));
       await Partida.insertMany(docs);
-      res.json({ sucesso: true, valoresReconhecidos: valores });
+
+      return res.json({
+        sucesso: true,
+        valoresReconhecidos: valores
+      });
+
     } catch (err) {
       console.error('Erro OCR/BD:', err);
-      res.status(500).json({ sucesso: false, erro: err.message });
+      return res.status(500).json({
+        sucesso: false,
+        mensagem: err.message
+      });
     } finally {
+      // Remove o ficheiro temporário
       fs.unlinkSync(imagePath);
     }
   }
@@ -75,12 +89,17 @@ router.get(
   async (req, res) => {
     const docs = await Partida.find().sort({ data: 1 });
     const nums = docs.map(d => parseFloat(d.valor));
+
     if (nums.length < 5) {
-      return res.status(422)
-        .json({ erro: 'Dados insuficientes para predizer.' });
+      return res.status(422).json({
+        sucesso: false,
+        mensagem: 'Dados insuficientes para predizer.'
+      });
     }
+
     const ult5 = nums.slice(-5);
     const pred = stats.mean(ult5).toFixed(2);
+
     res.json({ proximoValor: pred });
   }
 );
