@@ -10,6 +10,7 @@ export default function UploadForm() {
   const [valores, setValores] = useState([]);
   const [historico, setHistorico] = useState([]);
   const [predicao, setPredicao] = useState(null);
+  const [manualInput, setManualInput] = useState('');
 
   const onDrop = acceptedFiles => setArquivo(acceptedFiles[0]);
   const { getRootProps, getInputProps } = useDropzone({ onDrop, accept: 'image/*' });
@@ -56,6 +57,21 @@ export default function UploadForm() {
     }
   };
 
+  const handleManual = async () => {
+    if (!manualInput) return alert('Digite um valor para inserir manualmente.');
+    try {
+      const res = await axios.post('/api/partidas/manual', { valor: manualInput });
+      alert('Valor manual inserido: ' + res.data.valorInserido);
+      setManualInput('');
+      await fetchHistorico();
+    } catch (err) {
+      console.error('Erro ao inserir manual:', err);
+      const backendMsg = err.response?.data?.mensagem || err.response?.data?.erro;
+      const finalMsg = backendMsg || err.message || 'Erro desconhecido';
+      alert('Falha ao inserir manualmente: ' + finalMsg);
+    }
+  };
+
   const dataGrafico = historico.map((r, i) => ({
     name: `#${i + 1}`,
     value: parseFloat(r.valor)
@@ -87,7 +103,25 @@ export default function UploadForm() {
         Obter Predição do Próximo Valor
       </button>
       {predicao && (
-        <p className="mb-4">Valor Previsto: <strong>{predicao}x</strong></p>
+        <div className="mb-4">
+          <p>Valor Previsto: <strong>{predicao}x</strong></p>
+          <div className="mt-2">
+            <label className="mr-2">Ou insira manualmente:</label>
+            <input
+              type="text"
+              value={manualInput}
+              onChange={e => setManualInput(e.target.value)}
+              placeholder="ex: 2.45"
+              className="border px-2 py-1 mr-2"
+            />
+            <button
+              onClick={handleManual}
+              className="bg-yellow-500 text-white px-3 py-1"
+            >
+              Inserir Manual
+            </button>
+          </div>
+        </div>
       )}
 
       <h2 className="text-xl mb-2">Histórico de Resultados</h2>
