@@ -54,6 +54,38 @@ router.post(
   }
 );
 
+// ⬇️ Inserir manualmente um valor de multiplicador
+router.post(
+  '/manual',
+  allowRoles('admin','user'),
+  express.json(),
+  async (req, res) => {
+    const { valor } = req.body;
+    const match = valor.match(/^(\d+(\.\d+))x?$/);
+    if (!match) {
+      return res.status(422).json({
+        sucesso: false,
+        mensagem: 'Formato inválido: informe algo como "2.45" ou "2.45x".'
+      });
+    }
+    const normalized = match[1] + 'x';
+    try {
+      const partida = new Partida({ valor: normalized });
+      await partida.save();
+      return res.json({
+        sucesso: true,
+        valorInserido: normalized
+      });
+    } catch (err) {
+      console.error('Erro ao inserir manual:', err);
+      return res.status(500).json({
+        sucesso: false,
+        mensagem: err.message
+      });
+    }
+  }
+);
+
 // ⬇️ Histórico completo – admin e user
 router.get(
   '/resultados',
