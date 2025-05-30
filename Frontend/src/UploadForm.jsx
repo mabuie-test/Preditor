@@ -23,7 +23,8 @@ export default function UploadForm() {
       const res = await axios.get('/api/partidas/resultados');
       setHistorico(res.data);
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao buscar histórico:', err);
+      alert('Falha ao obter histórico: ' + (err.message || 'Erro desconhecido'));
     }
   };
 
@@ -36,7 +37,10 @@ export default function UploadForm() {
       setValores(res.data.valoresReconhecidos);
       await fetchHistorico();
     } catch (err) {
-      alert('Erro ao processar: ' + err.response?.data?.mensagem || err.message);
+      console.error('Erro ao processar imagem:', err);
+      const backendMsg = err.response?.data?.mensagem || err.response?.data?.erro;
+      const finalMsg = backendMsg || err.message || 'Erro desconhecido';
+      alert('Erro ao processar a imagem: ' + finalMsg);
     }
   };
 
@@ -45,7 +49,10 @@ export default function UploadForm() {
       const res = await axios.get('/api/partidas/predicao');
       setPredicao(res.data.proximoValor);
     } catch (err) {
-      alert('Não foi possível obter predição: ' + err.response?.data?.erro);
+      console.error('Erro ao obter predição:', err);
+      const backendMsg = err.response?.data?.mensagem || err.response?.data?.erro;
+      const finalMsg = backendMsg || err.message || 'Erro desconhecido';
+      alert('Não foi possível obter predição: ' + finalMsg);
     }
   };
 
