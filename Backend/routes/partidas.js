@@ -48,33 +48,50 @@ router.post(
         mensagem: err.message
       });
     } finally {
-      // Remove o ficheiro temporário
       fs.unlinkSync(imagePath);
     }
   }
 );
 
-// ⬇️ Inserir manualmente um valor de multiplicador
+// ⬇️ Inserção manual de um ou vários valores
 router.post(
   '/manual',
   allowRoles('admin','user'),
   express.json(),
   async (req, res) => {
-    const { valor } = req.body;
-    const match = valor.match(/^(\d+(\.\d+))x?$/);
-    if (!match) {
+    // Aceita { valor: "2.45" } ou { valores: ["2.45","1.20"] }
+    let entradas = [];
+    if (Array.isArray(req.body.valores)) {
+      entradas = req.body.valores;
+    } else if (typeof req.body.valor === 'string') {
+      entradas = [req.body.valor];
+    } else {
       return res.status(422).json({
         sucesso: false,
-        mensagem: 'Formato inválido: informe algo como "2.45" ou "2.45x".'
+        mensagem: 'Envie um campo "valor" (string) ou "valores" (array de strings).'
       });
     }
-    const normalized = match[1] + 'x';
+
+    // Normalizar e validar cada entrada
+    const normalizados = [];
+    for (const ent of entradas) {
+      const m = ent.match(/^(\d+(\.\d+))x?$/);
+      if (!m) {
+        return res.status(422).json({
+          sucesso: false,
+          mensagem: `Formato inválido em "${ent}". Use "n.nn" ou "n.nnx".`
+        });
+      }
+      normalizados.push(m[1] + 'x');
+    }
+
+    // Inserir todos de uma vez
     try {
-      const partida = new Partida({ valor: normalized });
-      await partida.save();
+      const docs = normalizados.map(v => ({ valor: v }));
+      await Partida.insertMany(docs);
       return res.json({
         sucesso: true,
-        valorInserido: normalized
+        valoresInseridos: normalizados
       });
     } catch (err) {
       console.error('Erro ao inserir manual:', err);
