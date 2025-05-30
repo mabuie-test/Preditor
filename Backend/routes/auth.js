@@ -1,16 +1,16 @@
 const express = require('express');
 const jwt     = require('jsonwebtoken');
 const User    = require('../models/User');
-const { allowRoles } = require('../middleware/role');
-const { verifyToken } = require('../middleware/auth');
+// const { allowRoles } = require('../middleware/role');
+// const { verifyToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Registo de novo utilizador (apenas admin)
+// Registo de novo utilizador (temporariamente aberto para criar o primeiro admin)
 router.post(
   '/register',
-  verifyToken,
-  allowRoles('admin'),
+  //verifyToken,
+  //allowRoles('admin'),
   async (req, res) => {
     const { username, password, role } = req.body;
     try {
