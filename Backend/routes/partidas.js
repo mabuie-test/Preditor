@@ -77,7 +77,7 @@ router.post(
   allowRoles('admin', 'user'),
   express.json(),
   async (req, res) => {
-    // 1) Pode receber { valor: "2.45" } ou { valores: ["2.45","1.20"] }
+    // 1) Recebe { valor: "2.45" } ou { valores: ["2.45","1.20"] }
     let entradas = [];
     if (Array.isArray(req.body.valores)) {
       entradas = req.body.valores;
@@ -152,6 +152,7 @@ router.get(
 
 /**
  * ⬇️ Estatísticas descritivas – apenas do utilizador autenticado
+ *     (media, moda, mediana, desvio, min, max, total)
  */
 router.get(
   '/estatisticas',
@@ -184,12 +185,14 @@ router.get(
 
 /**
  * ⬇️ Predição Avançada (estatísticas robustas + odd segura)
- *    - Se não houver NENHUMA entrada, devolve erro 422 “Dados insuficientes...”
- *    - Caso contrário, calcula:
- *        • média simples de todos os valores
- *        • mediana
- *        • média aparada (trimmed mean, 10% extremos descartados)
- *        • percentil 20% (odd “segura” sugerida)
+ *     - Se não houver NENHUMA entrada, devolve erro 422 “Dados insuficientes...”
+ *     - Caso contrário, calcula:
+ *         • mediaSimples (de todos)
+ *         • mediana (percentil 50%)
+ *         • mediaAparada (trimmed mean: descarta 10% dos extremos)
+ *         • lowRiskOdd  = percentil 20%
+ *         • mediumRiskOdd = percentil 50% (a mediana)
+ *         • highRiskOdd = percentil 80%
  */
 router.get(
   '/predicao',
@@ -214,7 +217,7 @@ router.get(
       // 1) Média simples de TODOS os valores
       const mediaSimples = stats.mean(nums).toFixed(2);
 
-      // 2) Mediana
+      // 2) Mediana (percentil 50%)
       const mediana = stats.median(nums).toFixed(2);
 
       // 3) Média aparada (trimmed mean), descartando 10% dos menores e 10% dos maiores
@@ -224,18 +227,25 @@ router.get(
       const aparados = sorted.slice(k, n - k);
       const mediaAparada = (aparados.length > 0
         ? stats.mean(aparados)
-        : stats.mean(sorted) // fallback para média simples se n<10
+        : stats.mean(sorted) // fallback para média simples se n < 10
       ).toFixed(2);
 
-      // 4) Percentil 20% (odd “segura”): valor abaixo do qual estão 20% dos dados
-      const safeOddRaw = stats.quantile(sorted, 0.20);
-      const safeOdd = safeOddRaw.toFixed(2);
+      // 4) Percentis para o “provably fair” de risco
+      const lowRiskOddRaw = stats.quantile(sorted, 0.20);    // 20% → low risk
+      const mediumRiskOddRaw = stats.quantile(sorted, 0.50); // 50% → medium risk (mediana)
+      const highRiskOddRaw = stats.quantile(sorted, 0.80);   // 80% → high risk
+
+      const lowRiskOdd = lowRiskOddRaw.toFixed(2);
+      const mediumRiskOdd = mediumRiskOddRaw.toFixed(2);
+      const highRiskOdd = highRiskOddRaw.toFixed(2);
 
       return res.json({
         proximoValor: mediaSimples,
         mediana,
         mediaAparada,
-        safeOdd
+        lowRiskOdd,
+        mediumRiskOdd,
+        highRiskOdd
       });
     } catch (err) {
       console.error('Erro ao calcular predição:', err);
