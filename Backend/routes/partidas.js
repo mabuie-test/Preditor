@@ -14,8 +14,8 @@ const upload = multer({ dest: 'uploads/' });
 
 /**
  * ⬇️ Upload e OCR – acessível a admin e user
- *     - Apaga todo o histórico do utilizador (reinicia sessão).
- *     - Executa OCR, extrai multiplicadores “n.nnx” e guarda apenas eles.
+ *    - Apaga todo o histórico do utilizador (reinicia sessão).
+ *    - Executa OCR, extrai multiplicadores “n.nnx” e guarda apenas eles.
  */
 router.post(
   '/upload',
@@ -69,7 +69,7 @@ router.post(
 
 /**
  * ⬇️ Inserção manual de um ou vários valores – admin & user
- *     - Não apaga histórico, apenas acrescenta novas entradas.
+ *    - Não apaga histórico, apenas acrescenta novas entradas.
  */
 router.post(
   '/manual',
@@ -77,7 +77,7 @@ router.post(
   allowRoles('admin', 'user'),
   express.json(),
   async (req, res) => {
-    // 1) Recebe { valor: "2.45" } ou { valores: ["2.45","1.20"] }
+    // 1) Pode receber { valor: "2.45" } ou { valores: ["2.45","1.20"] }
     let entradas = [];
     if (Array.isArray(req.body.valores)) {
       entradas = req.body.valores;
@@ -166,6 +166,7 @@ router.get(
       return res.json({
         media: stats.mean(nums),
         moda: stats.mode(nums),
+        mediana: stats.median(nums),
         desvio: stats.standardDeviation(nums),
         min: Math.min(...nums),
         max: Math.max(...nums),
@@ -182,10 +183,13 @@ router.get(
 );
 
 /**
- * ⬇️ Predição (média simples de TODOS os valores) – apenas do utilizador autenticado
- *
- * - Se não houver NENHUMA entrada, devolve erro 422 “Dados insuficientes...”
- * - Caso contrário, calcula a média simples de todos os valores e retorna { proximoValor }.
+ * ⬇️ Predição Avançada (estatísticas robustas + odd segura)
+ *    - Se não houver NENHUMA entrada, devolve erro 422 “Dados insuficientes...”
+ *    - Caso contrário, calcula:
+ *        • média simples de todos os valores
+ *        • mediana
+ *        • média aparada (trimmed mean, 10% extremos descartados)
+ *        • percentil 20% (odd “segura” sugerida)
  */
 router.get(
   '/predicao',
@@ -207,9 +211,32 @@ router.get(
         });
       }
 
-      // Média simples de TODOS os valores existentes
+      // 1) Média simples de TODOS os valores
       const mediaSimples = stats.mean(nums).toFixed(2);
-      return res.json({ proximoValor: mediaSimples });
+
+      // 2) Mediana
+      const mediana = stats.median(nums).toFixed(2);
+
+      // 3) Média aparada (trimmed mean), descartando 10% dos menores e 10% dos maiores
+      const n = nums.length;
+      const k = Math.floor(n * 0.10); // 10% de cada extremidade
+      const sorted = [...nums].sort((a, b) => a - b);
+      const aparados = sorted.slice(k, n - k);
+      const mediaAparada = (aparados.length > 0
+        ? stats.mean(aparados)
+        : stats.mean(sorted) // fallback para média simples se n<10
+      ).toFixed(2);
+
+      // 4) Percentil 20% (odd “segura”): valor abaixo do qual estão 20% dos dados
+      const safeOddRaw = stats.quantile(sorted, 0.20);
+      const safeOdd = safeOddRaw.toFixed(2);
+
+      return res.json({
+        proximoValor: mediaSimples,
+        mediana,
+        mediaAparada,
+        safeOdd
+      });
     } catch (err) {
       console.error('Erro ao calcular predição:', err);
       return res.status(500).json({
