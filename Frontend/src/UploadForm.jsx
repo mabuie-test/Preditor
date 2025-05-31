@@ -15,15 +15,15 @@ export default function UploadForm() {
   const [isProcessingOCR, setIsProcessingOCR] = useState(false); // Indicador “Processando OCR”
   const [valoresOCR, setValoresOCR] = useState([]);          // Valores extraídos pelo OCR
   const [historico, setHistorico] = useState([]);            // Histórico de partidas do utilizador
-  const [predicao, setPredicao] = useState(null);            // Predição retornada
+  const [predictionData, setPredictionData] = useState(null); // Dados de predição (objeto com vários campos)
   const [manualInput, setManualInput] = useState('');        // Campo para inserir manualmente
 
   // ---------- Dropzone ----------
   const onDrop = acceptedFiles => {
     setArquivo(acceptedFiles[0]);
-    // Limpar estados prévios ao carregar nova imagem
+    // Limpar estados prévios
     setValoresOCR([]);
-    setPredicao(null);
+    setPredictionData(null);
     setUploadProgress(0);
     setIsProcessingOCR(false);
   };
@@ -41,7 +41,7 @@ export default function UploadForm() {
 
   /**
    * GET /api/partidas/resultados
-   * @param {boolean} clearPrediction - se true, limpa o estado 'predicao'
+   * @param {boolean} clearPrediction - se true, limpa o estado 'predictionData'
    */
   const fetchHistorico = async (clearPrediction = false) => {
     try {
@@ -50,7 +50,7 @@ export default function UploadForm() {
       const dados = res.data || [];
       setHistorico(dados);
       if (clearPrediction) {
-        setPredicao(null);
+        setPredictionData(null);
       }
     } catch (err) {
       console.error('Erro ao buscar histórico:', err);
@@ -75,7 +75,7 @@ export default function UploadForm() {
     try {
       // Limpeza inicial
       setValoresOCR([]);
-      setPredicao(null);
+      setPredictionData(null);
       setIsProcessingOCR(false);
       setUploadProgress(0);
 
@@ -117,15 +117,15 @@ export default function UploadForm() {
 
   /**
    * GET /api/partidas/predicao
-   * - Retorna { proximoValor } = média simples de todos os valores.
-   * - Se não houver valores, devolve erro 422 “Dados insuficientes...”
+   * - Retorna objeto { proximoValor, mediana, mediaAparada, safeOdd }.
+   * - Se não houver valores, devolve erro 422 “Dados insuficientes…”.
    */
   const handlePredicao = async () => {
     console.log('DEBUG (frontend) histórico.length =', historico.length);
     try {
       const res = await axios.get('/api/partidas/predicao');
       console.log('DEBUG (frontend) /predicao respondeu:', res.data);
-      setPredicao(res.data.proximoValor);
+      setPredictionData(res.data);
     } catch (err) {
       console.error('Erro ao obter predição:', err);
       const backendMsg = err.response?.data?.mensagem || err.response?.data?.erro;
@@ -135,14 +135,14 @@ export default function UploadForm() {
         const finalMsg = backendMsg || err.message || 'Erro desconhecido';
         alert('Não foi possível obter predição: ' + finalMsg);
       }
-      setPredicao(null);
+      setPredictionData(null);
     }
   };
 
   /**
    * POST /api/partidas/manual
    * - Insere manualmente um ou vários valores (continuação em tempo real).
-   * - Não reinicia a sessão, apenas acrescenta ao histórico.
+   * - Não reinicia a sessão; apenas acrescenta ao histórico.
    */
   const handleManual = async () => {
     if (!manualInput.trim()) {
@@ -162,7 +162,7 @@ export default function UploadForm() {
       alert('Valores inseridos: ' + inseridos.join(', '));
 
       setManualInput('');
-      // Recarrega histórico, mas não limpa 'predicao' (jogo em tempo real)
+      // Recarrega histórico, mas não limpa 'predictionData'
       await fetchHistorico(false);
     } catch (err) {
       console.error('Erro ao inserir manual:', err);
@@ -237,16 +237,24 @@ export default function UploadForm() {
         Obter Predição do Próximo Valor
       </button>
 
-      {/* Exibe predição + campo para inserir manual */}
-      {predicao && (
+      {/* Exibe dados de predição e odd ideal */}
+      {predictionData && (
         <div className="mb-4">
+          <h2 className="text-xl">Predição Avançada</h2>
           <p>
-            Valor Previsto: <strong>{predicao}x</strong>
+            • <strong>Próximo Valor (média simples):</strong> {predictionData.proximoValor}x
+          </p>
+          <p>
+            • <strong>Mediana:</strong> {predictionData.mediana}x
+          </p>
+          <p>
+            • <strong>Média Aparada (10% extremos):</strong> {predictionData.mediaAparada}x
+          </p>
+          <p>
+            • <strong>Odd Ideal para Jogar com Segurança:</strong> {predictionData.safeOdd}x
           </p>
           <div className="mt-2">
-            <label className="mr-2">
-              Ou insira manualmente (vírgula separa):
-            </label>
+            <label className="mr-2">Ou insira manualmente (vírgula separa):</label>
             <input
               type="text"
               value={manualInput}
