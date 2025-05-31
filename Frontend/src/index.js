@@ -7,7 +7,6 @@ import { AuthProvider } from './AuthContext';
 import axios from 'axios';
 
 // Configure axios para apontar ao backend correto
-// Substitua o URL abaixo pelo domínio real do seu backend no Render (ou outro).
 axios.defaults.baseURL = process.env.REACT_APP_API_BASE_URL 
   || 'https://aviator-backend.onrender.com';
 
