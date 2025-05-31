@@ -8,41 +8,46 @@ export default function UploadForm() {
   const { role } = useContext(AuthContext);
 
   // Estados principais
-  const [arquivo, setArquivo] = useState(null);            // Ficheiro selecionado
-  const [uploadProgress, setUploadProgress] = useState(0); // Progresso do upload (0–100)
-  const [valoresOCR, setValoresOCR] = useState([]);        // Valores extraídos pelo OCR (visuais imediatos)
-  const [historico, setHistorico] = useState([]);          // Histórico persistido no backend
-  const [predicao, setPredicao] = useState(null);          // Predição atual
-  const [manualInput, setManualInput] = useState('');      // Campo de texto para inserir manualmente
+  const [arquivo, setArquivo] = useState(null);              // Ficheiro selecionado
+  const [uploadProgress, setUploadProgress] = useState(0);   // Progresso do upload (0–100)
+  const [isProcessingOCR, setIsProcessingOCR] = useState(false); // Indica “OCR em curso”
+  const [valoresOCR, setValoresOCR] = useState([]);          // Valores extraídos pelo OCR
+  const [historico, setHistorico] = useState([]);            // Histórico completo do utilizador
+  const [predicao, setPredicao] = useState(null);            // Predição atual
+  const [manualInput, setManualInput] = useState('');        // Campo para inserir manualmente
   const [isPredictEnabled, setIsPredictEnabled] = useState(false); // Controla botão de predição
 
   // Configuração do Dropzone
   const onDrop = acceptedFiles => {
+    // Quando o utilizador arrasta/seleciona novo ficheiro, limpamos estados anteriores
     setArquivo(acceptedFiles[0]);
+    setValoresOCR([]);
+    setPredicao(null);
     setUploadProgress(0);
+    setIsProcessingOCR(false);
   };
   const { getRootProps, getInputProps } = useDropzone({ onDrop, accept: 'image/*' });
 
-  // Ao montar, trazer histórico sem limpar estados visuais
+  // Ao montar, trazer histórico (inicialmente vazio ou com partidas passadas)
   useEffect(() => {
-    fetchHistorico();
+    fetchHistorico(false);
   }, []);
 
   /**
-   * Puxa histórico de partidas do backend (para o utilizador autenticado).
-   * @param {boolean} clearStates - se true, limpa valoresOCR e predicao para iniciar nova sessão.
+   * Puxa histórico de partidas do backend para o utilizador autenticado.
+   * @param {boolean} clearPrediction - se true, limpa a predição (usado após upload).
    */
-  const fetchHistorico = async (clearStates = false) => {
+  const fetchHistorico = async (clearPrediction = false) => {
     try {
       const res = await axios.get('/api/partidas/resultados');
-      setHistorico(res.data || []);
-      // Se quisermos forçar “novo gráfico” (após OCR), limpamos valores e predição
-      if (clearStates) {
-        setValoresOCR([]);
+      const dados = res.data || [];
+      setHistorico(dados);
+      // Após carregar histórico, definimos se a predição pode ser calculada
+      setIsPredictEnabled(dados.length >= 5);
+      // Se devemos limpar predição (quando inicio uma nova sessão via OCR), fazemos:
+      if (clearPrediction) {
         setPredicao(null);
       }
-      // Controlamos botão de predição: só activa se existirem ≥5 entradas no histórico
-      setIsPredictEnabled((res.data || []).length >= 5);
     } catch (err) {
       console.error('Erro ao buscar histórico:', err);
       alert('Falha ao obter histórico: ' + (err.message || 'Erro desconhecido'));
@@ -50,18 +55,28 @@ export default function UploadForm() {
   };
 
   /**
-   * Lida com o upload da imagem para OCR.
-   * - Faz o upload com progresso.
-   * - Persiste no backend, que POR SUA VEZ reinicia o histórico do utilizador.
-   * - Depois de terminado, recarrega histórico (clearStates=true).
+   * Processa a imagem via OCR:
+   * 1) Faz upload com progresso visual.  
+   * 2) Ao terminar upload, mostra “Processando OCR...” até receber resposta.  
+   * 3) Limpa o histórico anterior no backend (rota /upload faz deleteMany) e devolve os valores OCR, 
+   *    então recarrega histórico (limpa predição).
    */
   const handleUpload = async () => {
-    if (!arquivo) return alert('Selecione uma imagem primeiro.');
-
+    if (!arquivo) {
+      return alert('Selecione uma imagem primeiro.');
+    }
+    // Prepara FormData
     const fd = new FormData();
     fd.append('imagem', arquivo);
 
     try {
+      // Antes de iniciar OCR, limpar OCR anterior e historico visual
+      setValoresOCR([]);
+      setPredicao(null);
+      setIsProcessingOCR(false);
+      setUploadProgress(0);
+
+      // Faz o upload com callback de progresso
       const res = await axios.post('/api/partidas/upload', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
@@ -70,28 +85,34 @@ export default function UploadForm() {
         }
       });
 
-      // Mostrar imediatamente os valores extraídos
-      if (res.data.valoresReconhecidos) {
-        setValoresOCR(res.data.valoresReconhecidos);
-      }
+      // Quando upload chegar a 100%, entramos em “Processando OCR”
+      setUploadProgress(100);
+      setIsProcessingOCR(true);
 
-      // Recarregar histórico: clearStates=true para reiniciar gráfico e predição
+      // Agora aguardamos a resposta final (OCR + inserção no backend)
+      const ocrValues = res.data.valoresReconhecidos || [];
+      setValoresOCR(ocrValues);
+
+      // Recarrega histórico e limpa predição, pois é uma nova session
       await fetchHistorico(true);
 
-      // Após um pequeno atraso, limpar a barra de progresso
-      setTimeout(() => setUploadProgress(0), 1000);
+      // Terminado o processamento, desliga o indicador de “Processando OCR” após breve atraso
+      setTimeout(() => {
+        setIsProcessingOCR(false);
+        setUploadProgress(0);
+      }, 500);
     } catch (err) {
       console.error('Erro ao processar imagem:', err);
       const backendMsg = err.response?.data?.mensagem || err.response?.data?.erro;
       const finalMsg = backendMsg || err.message || 'Erro desconhecido';
       alert('Erro ao processar a imagem: ' + finalMsg);
       setUploadProgress(0);
+      setIsProcessingOCR(false);
     }
   };
 
   /**
-   * Solicita predição ao backend.
-   * - So faz sentido chamar se isPredictEnabled for true (isto evita repetidos “insuficientes”).
+   * Solicita predição ao backend, com base no histórico atual.
    */
   const handlePredicao = async () => {
     if (!isPredictEnabled) {
@@ -109,14 +130,13 @@ export default function UploadForm() {
   };
 
   /**
-   * Insere manualmente um ou vários valores, sem reiniciar sessão.
-   * - Não limpa histórico nem predição automaticamente.
-   * - Após a inserção, recarrega histórico (sem clearStates).
+   * Insere manualmente um ou vários valores, continuando o histórico (sem reiniciar sessão).
    */
   const handleManual = async () => {
     if (!manualInput.trim()) {
       return alert('Digite um ou mais valores (ex: "2.45,1.20").');
     }
+    // Divide string por vírgula e remove espaços vazios
     const arr = manualInput
       .split(',')
       .map(s => s.trim())
@@ -130,8 +150,9 @@ export default function UploadForm() {
       const inseridos = res.data.valoresInseridos || [res.data.valorInserido];
       alert('Valores inseridos: ' + inseridos.join(', '));
 
+      // Limpa campo manual
       setManualInput('');
-      // Recarrega histórico sem limpar predição (temos actualização em tempo real)
+      // Recarrega histórico (mantém predição atual, pois é tempo real)
       await fetchHistorico(false);
     } catch (err) {
       console.error('Erro ao inserir manual:', err);
@@ -141,7 +162,7 @@ export default function UploadForm() {
     }
   };
 
-  // Prepara dados para o gráfico de linhas
+  // Prepara os dados para o gráfico de linhas
   const dataGrafico = historico.map((r, i) => ({
     name: `#${i + 1}`,
     value: parseFloat(r.valor)
@@ -151,7 +172,7 @@ export default function UploadForm() {
     <div className="p-4">
       <h1 className="text-2xl mb-4">Aviator Predictor</h1>
 
-      {/* Dropzone para screenshot */}
+      {/* Área de Dropzone para seleção de screenshot */}
       <div {...getRootProps()} className="border-2 p-4 mb-4 cursor-pointer">
         <input {...getInputProps()} />
         {arquivo
@@ -159,7 +180,7 @@ export default function UploadForm() {
           : 'Arraste e largue o screenshot aqui ou clique para selecionar'}
       </div>
 
-      {/* Botão para enviar a imagem */}
+      {/* Botão para enviar a imagem para OCR */}
       <button
         onClick={handleUpload}
         className="bg-blue-600 text-white px-4 py-2 mb-4"
@@ -167,21 +188,27 @@ export default function UploadForm() {
         Processar Imagem
       </button>
 
-      {/* Barra de progresso (visível apenas quando > 0%) */}
+      {/* Barra de progresso do upload */}
       {uploadProgress > 0 && (
-        <div className="mb-4">
-          <label className="block mb-1">Progresso do Upload:</label>
+        <div className="mb-2">
+          <label className="block mb-1">Progresso do Upload: {uploadProgress}%</label>
           <progress
             value={uploadProgress}
             max="100"
             className="w-full h-4"
           />
-          <span className="text-sm">{uploadProgress}%</span>
         </div>
       )}
 
-      {/* Exibe valores extraídos pelo OCR */}
-      {valoresOCR.length > 0 && (
+      {/* Indicador de “Processando OCR” */}
+      {isProcessingOCR && (
+        <div className="mb-4 text-blue-700">
+          Processando OCR, aguarde...
+        </div>
+      )}
+
+      {/* Exibe valores extraídos pelo OCR (até o utilizador repetir upload) */}
+      {valoresOCR.length > 0 && !isProcessingOCR && (
         <div className="mb-4">
           <h2 className="text-xl">Valores Extraídos:</h2>
           <ul className="list-disc list-inside">
@@ -192,16 +219,20 @@ export default function UploadForm() {
         </div>
       )}
 
-      {/* Botão de predição (só activo se houver >=5 partidas no histórico) */}
+      {/* Botão de predição (ativo apenas se existirem ≥5 partidas no histórico) */}
       <button
         onClick={handlePredicao}
-        className={`px-4 py-2 mb-4 ${isPredictEnabled ? 'bg-green-600 text-white' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
+        className={`px-4 py-2 mb-4 ${
+          isPredictEnabled
+            ? 'bg-green-600 text-white'
+            : 'bg-gray-400 text-gray-700 cursor-not-allowed'
+        }`}
         disabled={!isPredictEnabled}
       >
         Obter Predição do Próximo Valor
       </button>
 
-      {/* Exibe predição + campo para inserção manual */}
+      {/* Se houver predição, exibe e disponibiliza o input manual */}
       {predicao && (
         <div className="mb-4">
           <p>
@@ -228,7 +259,7 @@ export default function UploadForm() {
         </div>
       )}
 
-      {/* Gráfico com histórico do utilizador */}
+      {/* Gráfico com histórico de resultados do utilizador */}
       <h2 className="text-xl mb-2">Histórico de Resultados</h2>
       <LineChart width={600} height={300} data={dataGrafico}>
         <CartesianGrid strokeDasharray="3 3" />
