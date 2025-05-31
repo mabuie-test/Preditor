@@ -15,13 +15,13 @@ export default function UploadForm() {
   const [isProcessingOCR, setIsProcessingOCR] = useState(false); // Indicador “Processando OCR”
   const [valoresOCR, setValoresOCR] = useState([]);          // Valores extraídos pelo OCR
   const [historico, setHistorico] = useState([]);            // Histórico de partidas do utilizador
-  const [predictionData, setPredictionData] = useState(null); // Dados de predição (objeto com vários campos)
+  const [predictionData, setPredictionData] = useState(null); // Dados de predição (objeto com várias métricas)
   const [manualInput, setManualInput] = useState('');        // Campo para inserir manualmente
 
   // ---------- Dropzone ----------
   const onDrop = acceptedFiles => {
     setArquivo(acceptedFiles[0]);
-    // Limpar estados prévios
+    // Limpar estados prévios ao carregar nova imagem
     setValoresOCR([]);
     setPredictionData(null);
     setUploadProgress(0);
@@ -117,7 +117,10 @@ export default function UploadForm() {
 
   /**
    * GET /api/partidas/predicao
-   * - Retorna objeto { proximoValor, mediana, mediaAparada, safeOdd }.
+   * - Retorna objeto:
+   *    {
+   *      proximoValor, mediaAparada, lowRiskOdd, mediumRiskOdd, highRiskOdd
+   *    }
    * - Se não houver valores, devolve erro 422 “Dados insuficientes…”.
    */
   const handlePredicao = async () => {
@@ -242,16 +245,19 @@ export default function UploadForm() {
         <div className="mb-4">
           <h2 className="text-xl">Predição Avançada</h2>
           <p>
-            • <strong>Próximo Valor (média simples):</strong> {predictionData.proximoValor}x
+            • <strong>Média Simples (próximoValor):</strong> {predictionData.proximoValor}x
           </p>
           <p>
-            • <strong>Mediana:</strong> {predictionData.mediana}x
+            • <strong>Média Aparada (trimmed mean):</strong> {predictionData.mediaAparada}x
           </p>
           <p>
-            • <strong>Média Aparada (10% extremos):</strong> {predictionData.mediaAparada}x
+            • <strong>Low‐Risk Odd (20º percentil):</strong> {predictionData.lowRiskOdd}x
           </p>
           <p>
-            • <strong>Odd Ideal para Jogar com Segurança:</strong> {predictionData.safeOdd}x
+            • <strong>Medium‐Risk Odd (50º percentil, mediana):</strong> {predictionData.mediumRiskOdd}x
+          </p>
+          <p>
+            • <strong>High‐Risk Odd (80º percentil):</strong> {predictionData.highRiskOdd}x
           </p>
           <div className="mt-2">
             <label className="mr-2">Ou insira manualmente (vírgula separa):</label>
