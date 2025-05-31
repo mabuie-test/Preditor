@@ -1,3 +1,5 @@
+// routes/partidas.js
+
 const express   = require('express');
 const multer    = require('multer');
 const Tesseract = require('tesseract.js');
@@ -5,17 +7,19 @@ const fs        = require('fs');
 const stats     = require('simple-statistics');
 const Partida   = require('../models/Partida');
 const { allowRoles } = require('../middleware/role');
+const { verifyToken } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
 /**
  * ⬇️ Upload e OCR – acessível a admin e user
- *    - Apaga todo o histórico do utilizador (reinicia sessão).
- *    - Executa OCR, extrai multiplicadores “n.nnx” e guarda apenas eles.
+ *     - Apaga todo o histórico do utilizador (reinicia sessão).
+ *     - Executa OCR, extrai multiplicadores “n.nnx” e guarda apenas eles.
  */
 router.post(
   '/upload',
+  verifyToken,
   allowRoles('admin', 'user'),
   upload.single('imagem'),
   async (req, res) => {
@@ -65,14 +69,15 @@ router.post(
 
 /**
  * ⬇️ Inserção manual de um ou vários valores – admin & user
- *    - Não apaga histórico, apenas acrescenta novas entradas.
+ *     - Não apaga histórico, apenas acrescenta novas entradas.
  */
 router.post(
   '/manual',
+  verifyToken,
   allowRoles('admin', 'user'),
   express.json(),
   async (req, res) => {
-    // Pode receber { valor: "2.45" } ou { valores: ["2.45","1.20"] }
+    // 1) Recebe { valor: "2.45" } ou { valores: ["2.45","1.20"] }
     let entradas = [];
     if (Array.isArray(req.body.valores)) {
       entradas = req.body.valores;
@@ -85,7 +90,7 @@ router.post(
       });
     }
 
-    // Normalizar e validar cada entrada para terminar em "x"
+    // 2) Normalizar e validar cada entrada para terminar em "x"
     const normalizados = [];
     for (const ent of entradas) {
       const m = ent.match(/^(\d+(\.\d+))x?$/);
@@ -98,7 +103,7 @@ router.post(
       normalizados.push(m[1] + 'x');
     }
 
-    // Inserir todas de uma só vez, associadas ao utilizador
+    // 3) Inserir todos de uma só vez, associando ao utilizador
     try {
       const docs = normalizados.map(v => ({
         valor: v,
@@ -124,6 +129,7 @@ router.post(
  */
 router.get(
   '/resultados',
+  verifyToken,
   allowRoles('admin', 'user'),
   async (req, res) => {
     try {
@@ -149,6 +155,7 @@ router.get(
  */
 router.get(
   '/estatisticas',
+  verifyToken,
   allowRoles('admin', 'user'),
   async (req, res) => {
     try {
@@ -182,14 +189,17 @@ router.get(
  */
 router.get(
   '/predicao',
+  verifyToken,
   allowRoles('admin', 'user'),
   async (req, res) => {
     try {
       const docs = await Partida
         .find({ user: req.user.id })
         .sort({ data: 1 });
-      const nums = docs.map(d => parseFloat(d.valor));
+      console.log('DEBUG /predicao: req.user.id =', req.user.id);
+      console.log('DEBUG /predicao: docs.length =', docs.length);
 
+      const nums = docs.map(d => parseFloat(d.valor));
       if (nums.length === 0) {
         return res.status(422).json({
           sucesso: false,
@@ -197,7 +207,7 @@ router.get(
         });
       }
 
-      // Média simples de TODOS os valores existentes (mesmo se < 5)
+      // Média simples de TODOS os valores existentes
       const mediaSimples = stats.mean(nums).toFixed(2);
       return res.json({ proximoValor: mediaSimples });
     } catch (err) {
