@@ -13,9 +13,8 @@ export default function UploadForm() {
   const [isProcessingOCR, setIsProcessingOCR] = useState(false); // Indica “OCR em curso”
   const [valoresOCR, setValoresOCR] = useState([]);          // Valores extraídos pelo OCR
   const [historico, setHistorico] = useState([]);            // Histórico completo do utilizador
-  const [predicao, setPredicao] = useState(null);            // Predição atual
+  const [predicao, setPredicao] = useState(null);            // Predição atual (string, ex. "2.45")
   const [manualInput, setManualInput] = useState('');        // Campo para inserir manualmente
-  const [isPredictEnabled, setIsPredictEnabled] = useState(false); // Controla botão de predição
 
   // Configuração do Dropzone
   const onDrop = acceptedFiles => {
@@ -26,7 +25,10 @@ export default function UploadForm() {
     setUploadProgress(0);
     setIsProcessingOCR(false);
   };
-  const { getRootProps, getInputProps } = useDropzone({ onDrop, accept: 'image/*' });
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop,
+    accept: 'image/*'
+  });
 
   // Ao montar, trazer histórico (inicialmente vazio ou com partidas passadas)
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function UploadForm() {
   }, []);
 
   /**
-   * Puxa histórico de partidas do backend para o utilizador autenticado.
+   * Puxa histórico de partidas do backend (para o utilizador autenticado).
    * @param {boolean} clearPrediction - se true, limpa a predição (usado após upload).
    */
   const fetchHistorico = async (clearPrediction = false) => {
@@ -42,9 +44,7 @@ export default function UploadForm() {
       const res = await axios.get('/api/partidas/resultados');
       const dados = res.data || [];
       setHistorico(dados);
-      // Após carregar histórico, definimos se a predição pode ser calculada
-      setIsPredictEnabled(dados.length >= 5);
-      // Se devemos limpar predição (quando inicio uma nova sessão via OCR), fazemos:
+      // Se quisermos limpar predição (quando iniciamos nova sessão via OCR), fazemos:
       if (clearPrediction) {
         setPredicao(null);
       }
@@ -56,10 +56,10 @@ export default function UploadForm() {
 
   /**
    * Processa a imagem via OCR:
-   * 1) Faz upload com progresso visual.  
-   * 2) Ao terminar upload, mostra “Processando OCR...” até receber resposta.  
-   * 3) Limpa o histórico anterior no backend (rota /upload faz deleteMany) e devolve os valores OCR, 
-   *    então recarrega histórico (limpa predição).
+   * 1) Faz o upload com progresso visual.
+   * 2) Ao chegar a 100%, diz “Processando OCR...” até receber resposta.
+   * 3) O backend (rota /upload) reinicia todo o histórico do utilizador e devolve os valores OCR extraídos.
+   * 4) Recarrega histórico (clearPrediction = true) para limpar predição, pois é nova sessão.
    */
   const handleUpload = async () => {
     if (!arquivo) {
@@ -70,7 +70,7 @@ export default function UploadForm() {
     fd.append('imagem', arquivo);
 
     try {
-      // Antes de iniciar OCR, limpar OCR anterior e historico visual
+      // Limpar os estados anteriores
       setValoresOCR([]);
       setPredicao(null);
       setIsProcessingOCR(false);
@@ -85,18 +85,18 @@ export default function UploadForm() {
         }
       });
 
-      // Quando upload chegar a 100%, entramos em “Processando OCR”
+      // Quando upload chega a 100%, entramos em “Processando OCR”
       setUploadProgress(100);
       setIsProcessingOCR(true);
 
-      // Agora aguardamos a resposta final (OCR + inserção no backend)
+      // Backend responde com { valoresReconhecidos: [...] }
       const ocrValues = res.data.valoresReconhecidos || [];
       setValoresOCR(ocrValues);
 
-      // Recarrega histórico e limpa predição, pois é uma nova session
+      // Recarrega histórico e limpa predição, pois é uma nova sessão
       await fetchHistorico(true);
 
-      // Terminado o processamento, desliga o indicador de “Processando OCR” após breve atraso
+      // Terminado o OCR, após breve atraso, desligar indicador e limpar progress
       setTimeout(() => {
         setIsProcessingOCR(false);
         setUploadProgress(0);
@@ -113,24 +113,28 @@ export default function UploadForm() {
 
   /**
    * Solicita predição ao backend, com base no histórico atual.
+   * Se o backend devolver “Dados insuficientes”, mostramos uma alerta.
    */
   const handlePredicao = async () => {
-    if (!isPredictEnabled) {
-      return alert('Dados insuficientes para predição (mínimo 5 partidas).');
-    }
     try {
       const res = await axios.get('/api/partidas/predicao');
       setPredicao(res.data.proximoValor);
     } catch (err) {
       console.error('Erro ao obter predição:', err);
+      // Se o status for 422 ou a mensagem indicar “Dados insuficientes”, mostramos alerta
       const backendMsg = err.response?.data?.mensagem || err.response?.data?.erro;
-      const finalMsg = backendMsg || err.message || 'Erro desconhecido';
-      alert('Não foi possível obter predição: ' + finalMsg);
+      if (backendMsg && backendMsg.toLowerCase().includes('insuficientes')) {
+        alert('Dados insuficientes para predição. Insira mais partidas.');
+      } else {
+        const finalMsg = backendMsg || err.message || 'Erro desconhecido';
+        alert('Não foi possível obter predição: ' + finalMsg);
+      }
+      setPredicao(null);
     }
   };
 
   /**
-   * Insere manualmente um ou vários valores, continuando o histórico (sem reiniciar sessão).
+   * Insere manualmente um ou vários valores, continuando o histórico em tempo real.
    */
   const handleManual = async () => {
     if (!manualInput.trim()) {
@@ -150,9 +154,8 @@ export default function UploadForm() {
       const inseridos = res.data.valoresInseridos || [res.data.valorInserido];
       alert('Valores inseridos: ' + inseridos.join(', '));
 
-      // Limpa campo manual
       setManualInput('');
-      // Recarrega histórico (mantém predição atual, pois é tempo real)
+      // Recarrega histórico sem limpar predição (jogo em tempo real)
       await fetchHistorico(false);
     } catch (err) {
       console.error('Erro ao inserir manual:', err);
@@ -162,7 +165,7 @@ export default function UploadForm() {
     }
   };
 
-  // Prepara os dados para o gráfico de linhas
+  // Prepara dados para o gráfico de linhas
   const dataGrafico = historico.map((r, i) => ({
     name: `#${i + 1}`,
     value: parseFloat(r.valor)
@@ -219,20 +222,15 @@ export default function UploadForm() {
         </div>
       )}
 
-      {/* Botão de predição (ativo apenas se existirem ≥5 partidas no histórico) */}
+      {/* Botão de predição (sempre habilitado; backend decide se há dados suficientes) */}
       <button
         onClick={handlePredicao}
-        className={`px-4 py-2 mb-4 ${
-          isPredictEnabled
-            ? 'bg-green-600 text-white'
-            : 'bg-gray-400 text-gray-700 cursor-not-allowed'
-        }`}
-        disabled={!isPredictEnabled}
+        className="bg-green-600 text-white px-4 py-2 mb-4"
       >
         Obter Predição do Próximo Valor
       </button>
 
-      {/* Se houver predição, exibe e disponibiliza o input manual */}
+      {/* Exibe predição + campo para inserção manual */}
       {predicao && (
         <div className="mb-4">
           <p>
