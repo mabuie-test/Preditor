@@ -1,0 +1,16 @@
+/* index.css */
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: #f9fafb;
+  color: #111827;
+}
+
+h1, h2, h3 {
+  color: #1f2937;
+}
+
+button {
+  transition: background-color 0.2s ease;
+}
