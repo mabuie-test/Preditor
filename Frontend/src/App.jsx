@@ -1,27 +1,35 @@
+// src/App.jsx
+
 import React, { useContext } from 'react';
-import { AuthContext } from './AuthContext';
-import Login from './Login';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import UploadForm from './UploadForm';
+import AdminPanel from './components/AdminPanel';
+import { AuthContext } from './AuthContext';
 
-export default function App() {
-  const { token, logout, role } = useContext(AuthContext);
-
-  if (!token) {
-    return <Login />;
-  }
+function App() {
+  const { role } = useContext(AuthContext);
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <header className="flex justify-between items-center p-4 border-b">
-        <div>
-          <strong>Bem-vindo,</strong> {role.toUpperCase()}
-        </div>
-        <button onClick={logout} className="text-red-600">Sair</button>
-      </header>
-      <main>
-        <UploadForm />
-      </main>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* Rota pública ou para utilizadores autenticados */}
+        <Route path="/" element={<UploadForm />} />
+
+        {/* Rota para admin somente */}
+        <Route 
+          path="/admin" 
+          element={
+            role === 'admin' 
+              ? <AdminPanel /> 
+              : <Navigate to="/" replace />
+          } 
+        />
+
+        {/* Outras rotas, fallback, etc. */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
+export default App;
