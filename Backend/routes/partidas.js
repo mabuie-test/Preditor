@@ -9,9 +9,11 @@ const { allowRoles } = require('../middleware/role');
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
 
-// ⬇️ Upload e OCR – acessível a admin e user
-// Ao processar uma nova imagem, eliminamos todo o histórico existente
-// do utilizador para reiniciar o gráfico e predições.
+/**
+ * ⬇️ Upload e OCR – acessível a admin e user
+ *    - Apaga todo o histórico do utilizador (reinicia sessão).
+ *    - Executa OCR, extrai multiplicadores “n.nnx” e guarda apenas eles.
+ */
 router.post(
   '/upload',
   allowRoles('admin', 'user'),
@@ -19,12 +21,12 @@ router.post(
   async (req, res) => {
     const imagePath = req.file.path;
     try {
-      // 1. Executar OCR
+      // 1) Executar OCR
       const { data: { text } } = await Tesseract.recognize(
         imagePath, 'eng', { logger: m => console.log(m) }
       );
 
-      // 2. Extrair todos os valores do tipo "2.45x"
+      // 2) Extrair todos os valores no formato "n.nnx" (ex: "2.45x")
       const matches = Array.from(text.matchAll(/(\d+\.\d+)x/g));
       const valores = matches.map(m => m[1] + 'x');
 
@@ -35,10 +37,10 @@ router.post(
         });
       }
 
-      // 3. Limpar histórico antigo do utilizador (reiniciar sessão)
+      // 3) Apagar TODO o histórico antigo do utilizador (reiniciar sessão)
       await Partida.deleteMany({ user: req.user.id });
 
-      // 4. Inserir novos valores em batch (cada documento inclui user)
+      // 4) Inserir somente os novos valores extraídos, associando ao utilizador
       const docs = valores.map(v => ({
         valor: v,
         user: req.user.id
@@ -61,14 +63,16 @@ router.post(
   }
 );
 
-// ⬇️ Inserção manual de um ou vários valores
-// Ao inserir manualmente, NÃO apagamos o histórico: os dados são somados.
+/**
+ * ⬇️ Inserção manual de um ou vários valores – admin & user
+ *    - Não apaga histórico, apenas acrescenta novas entradas.
+ */
 router.post(
   '/manual',
   allowRoles('admin', 'user'),
   express.json(),
   async (req, res) => {
-    // Aceita { valor: "2.45" } ou { valores: ["2.45","1.20"] }
+    // Pode receber { valor: "2.45" } ou { valores: ["2.45","1.20"] }
     let entradas = [];
     if (Array.isArray(req.body.valores)) {
       entradas = req.body.valores;
@@ -81,7 +85,7 @@ router.post(
       });
     }
 
-    // Normalizar e validar cada entrada
+    // Normalizar e validar cada entrada para terminar em "x"
     const normalizados = [];
     for (const ent of entradas) {
       const m = ent.match(/^(\d+(\.\d+))x?$/);
@@ -94,7 +98,7 @@ router.post(
       normalizados.push(m[1] + 'x');
     }
 
-    // Inserir todos de uma vez, incluindo o user, sem apagar histórico
+    // Inserir todas de uma só vez, associadas ao utilizador
     try {
       const docs = normalizados.map(v => ({
         valor: v,
@@ -115,7 +119,9 @@ router.post(
   }
 );
 
-// ⬇️ Histórico completo – apenas partidas do utilizador autenticado
+/**
+ * ⬇️ Histórico completo – apenas entradas do utilizador autenticado
+ */
 router.get(
   '/resultados',
   allowRoles('admin', 'user'),
@@ -138,7 +144,9 @@ router.get(
   }
 );
 
-// ⬇️ Estatísticas descritivas – apenas do utilizador autenticado
+/**
+ * ⬇️ Estatísticas descritivas – apenas do utilizador autenticado
+ */
 router.get(
   '/estatisticas',
   allowRoles('admin', 'user'),
@@ -166,7 +174,12 @@ router.get(
   }
 );
 
-// ⬇️ Predição (média móvel de ordem 5) – apenas do utilizador autenticado
+/**
+ * ⬇️ Predição (média simples de TODOS os valores) – apenas do utilizador autenticado
+ *
+ * - Se não houver NENHUMA entrada, devolve erro 422 “Dados insuficientes...”
+ * - Caso contrário, calcula a média simples de todos os valores e retorna { proximoValor }.
+ */
 router.get(
   '/predicao',
   allowRoles('admin', 'user'),
@@ -177,16 +190,16 @@ router.get(
         .sort({ data: 1 });
       const nums = docs.map(d => parseFloat(d.valor));
 
-      if (nums.length < 5) {
+      if (nums.length === 0) {
         return res.status(422).json({
           sucesso: false,
-          mensagem: 'Dados insuficientes para predizer.'
+          mensagem: 'Dados insuficientes para predizer. Insira pelo menos 1 valor.'
         });
       }
 
-      const ult5 = nums.slice(-5);
-      const pred = stats.mean(ult5).toFixed(2);
-      return res.json({ proximoValor: pred });
+      // Média simples de TODOS os valores existentes (mesmo se < 5)
+      const mediaSimples = stats.mean(nums).toFixed(2);
+      return res.json({ proximoValor: mediaSimples });
     } catch (err) {
       console.error('Erro ao calcular predição:', err);
       return res.status(500).json({
