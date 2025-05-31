@@ -61,7 +61,7 @@ export default function UploadForm() {
   /**
    * POST /api/partidas/upload
    * - Faz o upload da imagem para OCR.
-   * - Atualiza a barra de progresso.
+   * - Atualiza a barra de progresso do upload.
    * - Exibe “Processando OCR” até receber resposta.
    * - Lê valores, recarrega histórico (nova sessão).
    */
@@ -201,7 +201,7 @@ export default function UploadForm() {
         Processar Imagem
       </button>
 
-      {/* Barra de progresso */}
+      {/* Barra de progresso do Upload */}
       {uploadProgress > 0 && (
         <div className="mb-2">
           <label className="block mb-1">Progresso do Upload: {uploadProgress}%</label>
@@ -213,10 +213,11 @@ export default function UploadForm() {
         </div>
       )}
 
-      {/* Indicador “Processando OCR…” */}
+      {/* Indicador de OCR em curso: Progress Bar indeterminado */}
       {isProcessingOCR && (
-        <div className="mb-4 text-blue-700">
-          Processando OCR, aguarde...
+        <div className="mb-4">
+          <label className="block mb-1">Processando OCR, aguarde…</label>
+          <progress className="w-full h-4" />
         </div>
       )}
 
